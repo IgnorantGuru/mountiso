@@ -1,0 +1,239 @@
+#!/bin/bash
+# Script Name: mountiso    http://igurublog.wordpress.com/downloads/script-mountiso/ 
+# Requires: 
+# License: GNU GENERAL PUBLIC LICENSE Version 3 http://www.gnu.org/licenses/gpl-3.0.txt
+
+
+# USER DEFAULTS (these settings must match fstab)
+
+# Where to mount ISO files
+mnt="/mnt/iso"
+
+# Temp link filename for ISO files
+isolink="/tmp/mountiso-image.iso"
+
+# Loop device to use
+loop="/dev/loop7"
+
+
+
+
+# END USER DEFAULTS
+
+##############################################################################
+
+
+help()
+{
+	cat << EOF
+mountiso version 1.0.1
+Sets up and performs mounting of ISO files by non-root user
+Usage: mountiso FILE         # mounts FILE to $mnt
+       mountiso              # unmounts $mnt
+       mountiso [OPTION]     # admin functions   
+OPTIONS
+--help          displays this usage guide
+--setup         sets up system for non-root user mounting of ISO files:
+                  a backup of /etc/fstab is made
+                  required entries are added to /etc/fstab if needed
+                  /dev/loop0 through /dev/loop7 are created if needed
+                  (must be run as root)
+NOTE:
+Instead of --setup, you can manually add these lines to /etc/fstab:
+ $isolink $mnt auto ro,loop=$loop,user,noexec,noauto 0 0
+ $loop $mnt auto user,noexec,noauto 0 0
+and create $loop, eg:  sudo mknod /dev/loop7 b 7 7
+and:  sudo mkdir $mnt
+
+If your /dev/loop devices disappear after a reboot, you may need to add:
+          loop max_loop=8
+      to the file /etc/modules, OR:
+          options loop max_loop=8
+      to the file /etc/modprobe.conf
+
+Instructions and updates:
+http://igurublog.wordpress.com/downloads/script-mountiso/
+
+EOF
+	exit
+}
+
+index=0
+while [ "$1" != "" ];
+do
+	if [ "${1:0:1}" = "-" ]; then
+		case "$1" in
+			--help | -help | -h )
+				help
+				exit
+				;;
+			--setup )
+				syssetup=1
+				;;
+			* )
+				echo "mountiso: Unknown option $1"
+				exit 1
+				;;
+		esac
+	else
+		(( index++ ))
+		if (( index == 1 )); then
+			isofile="$1"
+		else
+			echo "mountiso: Too many arguments"
+			exit 1
+		fi
+	fi
+	shift
+done
+
+if (( syssetup == 1 )); then
+	# Setup system
+	if [ "$(whoami)" != "root" ]; then
+		echo "mountiso: System setup requires root"
+		echo "          Use:  sudo mountiso --setup"
+		exit 1
+	fi
+	test=`grep "^$isolink $mnt auto " /etc/fstab`
+	test2=`grep "^$loop $mnt auto " /etc/fstab`
+	if [ "$test" == "" ] || [ "$test2" == "" ]; then
+		# make backup of fstab
+		bakfile="/etc/fstab-mountiso-$(date +%s).bak"
+		while [ -e "$bakfile" ]; do
+			sleep 1
+			bakfile="/etc/fstab-mountiso-$(date +%s).bak"
+		done
+		cp -a /etc/fstab "$bakfile"
+		if [ ! -e "$bakfile" ]; then
+			echo "mountiso: backup of fstab failed - no changes made"
+			exit 1
+		else
+			echo "fstab backup created: $bakfile"
+		fi
+		# add lines to fstab if needed
+		test3=`grep "# mountiso - allow mounting of ISO file by non-root user" /etc/fstab`
+		if [ "$test3" == "" ]; then
+			echo >> /etc/fstab
+			echo "# mountiso added - allow mounting of ISO file by non-root user" >> /etc/fstab
+		fi
+		if [ "$test" == "" ]; then
+			echo "$isolink $mnt auto ro,loop=$loop,user,noexec,noauto 0 0" >> /etc/fstab
+		fi
+		if [ "$test2" == "" ]; then
+			echo "$loop $mnt auto user,noexec,noauto 0 0" >> /etc/fstab
+		fi
+		echo "fstab appended"
+	else
+		echo "fstab is already setup - no changes made"
+	fi
+	# add loop devices if needed
+	x=0
+	while (( x < 8 )); do
+		if [ ! -e "/dev/loop$x" ]; then
+			mknod -m660 /dev/loop$x b 7 $x
+			chown root:disk /dev/loop$x
+			echo "created /dev/loop$x"
+		fi
+		(( x++ ))
+	done
+	if [ ! -d "$mnt" ]; then
+		mkdir -p "$mnt"
+		echo "created directory $mnt"
+	fi
+	echo "Your system is now setup for non-root mounting of ISO files."
+	echo
+	echo "NOTE: If your /dev/loop devices disappear after a reboot, you may need to add:"
+	echo "          loop max_loop=8"
+	echo "      to the file /etc/modules, OR:"
+	echo "          options loop max_loop=8"
+	echo "      to the file /etc/modprobe.conf, then run this setup again."
+	exit
+fi
+
+# test fstab
+fstab=0
+test=`grep "^$isolink $mnt auto " /etc/fstab`
+test2=`grep "^$loop $mnt auto " /etc/fstab`
+if [ "$test" == "" ] || [ "$test2" == "" ]; then
+	echo "mountiso: Note: system is not setup for non-root user iso mount"
+	echo "                sudo will be used instead (missing fstab entries)"
+	echo "          To correct this:  sudo mountiso --setup"
+	echo
+else
+	if [ ! -e "$loop" ]; then
+		echo "mountiso: Note: system is not setup for non-root user iso mount"
+		echo "                sudo will be used instead (missing $loop)"
+		echo "          To correct this:  sudo mountiso --setup"
+		echo
+	else
+		fstab=1
+	fi
+fi
+
+if [ "$isofile" == "" ]; then
+	# Unmount
+	test=`mount | grep " on $mnt type .*loop=$loop"`
+	if (( fstab == 1 )) && [ "$test" != "" ]; then
+		# Unmount as non-root user
+		rm -f "$isolink"
+		test=`umount "$mnt" 2>&1`
+		err=$?
+		if [ "$err" != "0" ]; then
+			echo "$test"
+			exit $err
+		fi
+	else
+		test=`mount | grep " on $mnt type "`
+		if [ "$test" != "" ]; then
+			# Unmount as root
+			echo ">>> sudo umount \"$mnt\""
+			sudo umount "$mnt"
+		else
+			echo "mountiso: Nothing is mounted on $mnt (mtab)"
+		fi
+	fi
+else
+	# Mount
+	isofile="$(readlink -m "$isofile")"
+	if [ ! -e "$isofile" ]; then
+		echo "mountiso: File not found: $isofile"
+		exit 2
+	fi
+	if [ ! -d "$mnt" ]; then
+		echo "mountiso: Missing mount point $mnt"
+		echo "          To correct this:  sudo mountiso --setup"
+		exit 2
+	fi
+	test=`mount | grep " on $mnt type "`
+	if [ "$test" != "" ]; then
+		echo "mountiso: $mnt is already mounted"
+		echo "          $test"
+		exit 2
+	fi
+	if (( fstab == 1 )); then
+		# Mount as non-root user
+		rm -f "$isolink"
+		ln -s "$isofile" "$isolink"
+		if [ -h "$isolink" ]; then
+			mount "$isolink"
+			rm -f "$isolink"
+		else
+			echo "mountiso: Creation of link $isolink to $isofile failed"
+			exit 2
+		fi
+	else
+		# Mount as root
+		echo ">>> sudo mount -o loop,ro \"$isofile\" \"$mnt\""
+		sudo mount -o loop,ro "$isofile" "$mnt"
+	fi
+fi
+
+exit
+
+# CHANGELOG
+# 1.0.1:  corrected problem with relative paths
+#         added note about max_loop setting
+# 1.0.0:  changed mtab detection
+#         changed fstab backup filename
+# 0.9.1:  unmount error code preserved
+

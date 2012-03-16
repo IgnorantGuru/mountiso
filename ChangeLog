@@ -1,0 +1,7 @@
+
+# 1.0.1:  corrected problem with relative paths
+#         added note about max_loop setting
+# 1.0.0:  changed mtab detection
+#         changed fstab backup filename
+# 0.9.1:  unmount error code preserved
+
