@@ -2,21 +2,26 @@ README for mountiso
 
 
 OVERVIEW
-    
+========
+
 Sets up and performs mounting of ISO files by non-root user
 
 Homepage & Instructions:
     http://igurublog.wordpress.com/downloads/script-mountiso/
 
 Downloads:
-    https://github.com/IgnorantGuru/mountiso
+    https://github.com/IgnorantGuru/mountiso/tags
     https://github.com/IgnorantGuru/mountiso/tree/master/packages
 
 Debian/Ubuntu PPA:
     http://igurublog.wordpress.com/downloads/ppa/
-    
+
+Bug Reports:
+    https://github.com/IgnorantGuru/mountiso/issues
+
 
 INSTALLATION
+============
 
 To install:
 
@@ -29,6 +34,7 @@ To remove:
 
 
 LICENSE
+=======
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
